@@ -7,7 +7,7 @@ import sys
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 class BG3ModInstaller:
@@ -63,6 +63,40 @@ class BG3ModInstaller:
             print(f"Error reading installed mods: {e}")
             return []
 
+    def get_mod_info_from_zip(self, zip_path: Path) -> Optional[Dict]:
+        """Extract mod information from a zip file."""
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                info_files = [f for f in zip_ref.namelist() if f.endswith('info.json')]
+                if info_files:
+                    info_data = json.loads(zip_ref.read(info_files[0]))
+                    if "Mods" in info_data and len(info_data["Mods"]) > 0:
+                        return info_data["Mods"][0]
+            return None
+        except Exception as e:
+            print(f"Error reading mod info from zip: {e}")
+            return None
+
+    def display_mod_info(self, mod_info: Dict):
+        """Display formatted mod information."""
+        print("\nMod Details:")
+        print("-" * 40)
+        for key, value in mod_info.items():
+            if key not in ['MD5']:  # Skip technical details
+                print(f"{key}: {value}")
+        print("-" * 40)
+
+    def confirm_action(self, action: str, mod_info: Dict) -> bool:
+        """Ask for user confirmation with mod details."""
+        self.display_mod_info(mod_info)
+        while True:
+            response = input(f"\nAre you sure you want to {action} this mod? (yes/no): ").lower()
+            if response in ['yes', 'y']:
+                return True
+            if response in ['no', 'n']:
+                return False
+            print("Please answer with 'yes' or 'no'")
+
     def remove_mod(self, mod_index: int):
         """Remove a mod by its index from the list."""
         try:
@@ -72,13 +106,21 @@ class BG3ModInstaller:
                 return False
 
             mod_to_remove = installed_mods[mod_index]
+            
+            # Ask for confirmation
+            if not self.confirm_action("remove", mod_to_remove):
+                print("Mod removal cancelled.")
+                return False
+
             mod_folder = mod_to_remove['Folder']
 
+            # Remove .pak file
             pak_path = self.mods_path / f"{mod_folder}.pak"
             if pak_path.exists():
                 pak_path.unlink()
                 print(f"Removed pak file: {pak_path}")
 
+            # Update modsettings.lsx
             tree = ET.parse(self.profile_modsettings)
             root = tree.getroot()
             
@@ -146,9 +188,18 @@ class BG3ModInstaller:
     def install_mod(self, mod_path):
         """Install a mod from a zip file or directory."""
         try:
+            # Create mods directory if it doesn't exist
             self.mods_path.mkdir(parents=True, exist_ok=True)
             
             if mod_path.suffix.lower() in ['.zip', '.rar', '.7z']:
+                # Get mod info and confirm installation
+                mod_info = self.get_mod_info_from_zip(mod_path)
+                if mod_info:
+                    if not self.confirm_action("install", mod_info):
+                        print("Mod installation cancelled.")
+                        return
+                
+                # Extract archive
                 with zipfile.ZipFile(mod_path, 'r') as zip_ref:
                     pak_files = [f for f in zip_ref.namelist() if f.endswith('.pak')]
                     info_files = [f for f in zip_ref.namelist() if f.endswith('info.json')]
@@ -166,6 +217,16 @@ class BG3ModInstaller:
                             self.update_modsettings(info_data["Mods"][0])
                     
             elif mod_path.suffix.lower() == '.pak':
+                print("\nWarning: Installing a .pak file directly. No mod information available for confirmation.")
+                while True:
+                    response = input("Do you want to continue? (yes/no): ").lower()
+                    if response in ['no', 'n']:
+                        print("Mod installation cancelled.")
+                        return
+                    if response in ['yes', 'y']:
+                        break
+                    print("Please answer with 'yes' or 'no'")
+                
                 shutil.copy2(mod_path, self.mods_path)
                 print(f"Installed {mod_path.name} to mods directory")
                 
