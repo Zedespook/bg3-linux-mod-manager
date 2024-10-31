@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import argparse
 import json
 import os
 import shutil
@@ -18,7 +17,6 @@ class BG3ModInstaller:
         self.larian_path = self.steam_path / f"steamapps/compatdata/{self.game_id}/pfx/drive_c/users/steamuser/AppData/Local/Larian Studios"
         self.steam_userdata = self.steam_path / "userdata"
         
-        # Derived paths
         self.mods_path = self.larian_path / "Baldur's Gate 3/Mods"
         self.profile_modsettings = self.larian_path / "Baldur's Gate 3/PlayerProfiles/Public/modsettings.lsx"
 
@@ -31,6 +29,20 @@ class BG3ModInstaller:
             return steam_ids[0]
         except Exception as e:
             print(f"Error finding Steam ID: {e}")
+            sys.exit(1)
+
+    def sync_modsettings(self):
+        """Copy the main modsettings.lsx file to the userdata location."""
+        try:
+            steam_id = self.get_steam_id()
+            userdata_modsettings = self.steam_userdata / steam_id / self.game_id / "modsettings.lsx"
+            
+            userdata_modsettings.parent.mkdir(parents=True, exist_ok=True)
+            
+            shutil.copy2(self.profile_modsettings, userdata_modsettings)
+            print(f"Synchronized modsettings.lsx to {userdata_modsettings}")
+        except Exception as e:
+            print(f"Error synchronizing modsettings files: {e}")
             sys.exit(1)
 
     def get_installed_mods(self) -> List[Dict]:
@@ -67,24 +79,21 @@ class BG3ModInstaller:
                 pak_path.unlink()
                 print(f"Removed pak file: {pak_path}")
 
-            steam_id = self.get_steam_id()
-            userdata_modsettings = self.steam_userdata / steam_id / self.game_id / "modsettings.lsx"
-
-            for settings_path in [self.profile_modsettings, userdata_modsettings]:
-                tree = ET.parse(settings_path)
-                root = tree.getroot()
-                
-                mods_children = root.find(".//node[@id='Mods']/children")
-                if mods_children is not None:
-                    for mod in mods_children.findall("node[@id='ModuleShortDesc']"):
-                        folder = mod.find("attribute[@id='Folder']")
-                        if folder is not None and folder.get('value') == mod_folder:
-                            mods_children.remove(mod)
-                            break
-                
-                tree.write(settings_path, encoding="utf-8", xml_declaration=True)
-                print(f"Updated {settings_path}")
-
+            tree = ET.parse(self.profile_modsettings)
+            root = tree.getroot()
+            
+            mods_children = root.find(".//node[@id='Mods']/children")
+            if mods_children is not None:
+                for mod in mods_children.findall("node[@id='ModuleShortDesc']"):
+                    folder = mod.find("attribute[@id='Folder']")
+                    if folder is not None and folder.get('value') == mod_folder:
+                        mods_children.remove(mod)
+                        break
+            
+            tree.write(self.profile_modsettings, encoding="utf-8", xml_declaration=True)
+            print(f"Updated {self.profile_modsettings}")
+            
+            self.sync_modsettings()
             return True
 
         except Exception as e:
@@ -113,28 +122,26 @@ class BG3ModInstaller:
         return module
 
     def update_modsettings(self, mod_info):
-        """Update both modsettings.lsx files with new mod information."""
-        steam_id = self.get_steam_id()
-        userdata_modsettings = self.steam_userdata / steam_id / self.game_id / "modsettings.lsx"
-        
-        for settings_path in [self.profile_modsettings, userdata_modsettings]:
-            try:
-                tree = ET.parse(settings_path)
-                root = tree.getroot()
-                
-                mods_children = root.find(".//node[@id='Mods']/children")
-                if mods_children is None:
-                    raise Exception("Mods children section not found in modsettings.lsx")
-                
-                new_module = self.create_mod_xml(mod_info)
-                mods_children.append(new_module)
-                
-                tree.write(settings_path, encoding="utf-8", xml_declaration=True)
-                print(f"Updated {settings_path}")
-                
-            except Exception as e:
-                print(f"Error updating {settings_path}: {e}")
-                sys.exit(1)
+        """Update modsettings.lsx file with new mod information."""
+        try:
+            tree = ET.parse(self.profile_modsettings)
+            root = tree.getroot()
+            
+            mods_children = root.find(".//node[@id='Mods']/children")
+            if mods_children is None:
+                raise Exception("Mods children section not found in modsettings.lsx")
+            
+            new_module = self.create_mod_xml(mod_info)
+            mods_children.append(new_module)
+            
+            tree.write(self.profile_modsettings, encoding="utf-8", xml_declaration=True)
+            print(f"Updated {self.profile_modsettings}")
+            
+            self.sync_modsettings()
+            
+        except Exception as e:
+            print(f"Error updating modsettings: {e}")
+            sys.exit(1)
 
     def install_mod(self, mod_path):
         """Install a mod from a zip file or directory."""
