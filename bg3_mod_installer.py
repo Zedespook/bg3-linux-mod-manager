@@ -283,9 +283,9 @@ def display_installed_mods(mods: List[Dict]):
             print("Please enter a valid number")
 
 def main():
-    parser = argparse.ArgumentParser(description='Install Baldur\'s Gate 3 Mods on Linux')
+    parser = argparse.ArgumentParser(description="Install Baldur's Gate 3 Mods on Linux")
     parser.add_argument(
-        '-p', '--path',
+        "-p", "--path",
         help="Root path for Steam (default: '~/.steam/steam') - should contain the 'steamapps' dir.")
     args = parser.parse_args()
     installer = BG3ModInstaller(steam_path=args.path)
