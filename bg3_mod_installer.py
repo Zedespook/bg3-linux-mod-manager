@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 
 
 class BG3ModInstaller:
-    def __init__(self, steam_path = None):
+    def __init__(self, steam_path = None, steam_userdata_path = None):
         if not steam_path:
             steam_path = Path.home() / ".steam/steam"
         else:
@@ -21,7 +21,11 @@ class BG3ModInstaller:
         self.steam_path = steam_path
         self.game_id = "1086940"
         self.larian_path = self.steam_path / f"steamapps/compatdata/{self.game_id}/pfx/drive_c/users/steamuser/AppData/Local/Larian Studios"
-        self.steam_userdata = self.steam_path / "userdata"
+
+        if not steam_userdata_path:
+            self.steam_userdata = self.steam_path / "userdata"
+        else:
+            self.steam_userdata = Path(steam_userdata_path)
 
         self.mods_path = self.larian_path / "Baldur's Gate 3/Mods"
         self.profile_modsettings = self.larian_path / "Baldur's Gate 3/PlayerProfiles/Public/modsettings.lsx"
@@ -287,8 +291,11 @@ def main():
     parser.add_argument(
         "-p", "--path",
         help="Root path for Steam (default: '~/.steam/steam') - should contain the 'steamapps' dir.")
+    parser.add_argument(
+        "-u", "--userpath",
+        help="Root path for Steam userdata (default: '~/.steam/steam/userdata').")
     args = parser.parse_args()
-    installer = BG3ModInstaller(steam_path=args.path)
+    installer = BG3ModInstaller(steam_path=args.path, steam_userdata_path=args.userpath)
 
     while True:
         choice = display_menu()
