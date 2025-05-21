@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import json
 import os
 import shutil
@@ -11,14 +12,30 @@ from typing import Dict, List, Optional
 
 
 class BG3ModInstaller:
-    def __init__(self):
-        self.steam_path = Path.home() / ".steam/steam"
+    def __init__(self, steam_path = None, steam_userdata_path = None):
+        if not steam_path:
+            steam_path = Path.home() / ".steam/steam"
+        else:
+            steam_path = Path(steam_path)
+
+        self.steam_path = steam_path
         self.game_id = "1086940"
         self.larian_path = self.steam_path / f"steamapps/compatdata/{self.game_id}/pfx/drive_c/users/steamuser/AppData/Local/Larian Studios"
-        self.steam_userdata = self.steam_path / "userdata"
-        
+
+        if not steam_userdata_path:
+            self.steam_userdata = self.steam_path / "userdata"
+        else:
+            self.steam_userdata = Path(steam_userdata_path)
+
         self.mods_path = self.larian_path / "Baldur's Gate 3/Mods"
         self.profile_modsettings = self.larian_path / "Baldur's Gate 3/PlayerProfiles/Public/modsettings.lsx"
+
+        # Check on something that will exist in the most common scenario (a save game)
+        if not os.path.isdir(self.larian_path / "Baldur's Gate 3/PlayerProfiles/Public/Savegames/Story"):
+            print("Game not found, please ensure your Steam path is correct and Baldur's Gate 3 is installed.")
+            print(f"Currently set to:\n  {self.steam_path} (change with the '--path' option)")
+            sys.exit(1)
+
 
     def get_steam_id(self):
         """Get the first Steam ID from userdata directory."""
@@ -36,9 +53,9 @@ class BG3ModInstaller:
         try:
             steam_id = self.get_steam_id()
             userdata_modsettings = self.steam_userdata / steam_id / self.game_id / "modsettings.lsx"
-            
+
             userdata_modsettings.parent.mkdir(parents=True, exist_ok=True)
-            
+
             shutil.copy2(self.profile_modsettings, userdata_modsettings)
             print(f"Synchronized modsettings.lsx to {userdata_modsettings}")
         except Exception as e:
@@ -51,13 +68,13 @@ class BG3ModInstaller:
             tree = ET.parse(self.profile_modsettings)
             root = tree.getroot()
             mods = []
-            
+
             for mod in root.findall(".//node[@id='ModuleShortDesc']"):
                 mod_info = {}
                 for attr in mod.findall("attribute"):
                     mod_info[attr.get('id')] = attr.get('value')
                 mods.append(mod_info)
-            
+
             return mods
         except Exception as e:
             print(f"Error reading installed mods: {e}")
@@ -106,7 +123,7 @@ class BG3ModInstaller:
                 return False
 
             mod_to_remove = installed_mods[mod_index]
-            
+
             # Ask for confirmation
             if not self.confirm_action("remove", mod_to_remove):
                 print("Mod removal cancelled.")
@@ -123,7 +140,7 @@ class BG3ModInstaller:
             # Update modsettings.lsx
             tree = ET.parse(self.profile_modsettings)
             root = tree.getroot()
-            
+
             mods_children = root.find(".//node[@id='Mods']/children")
             if mods_children is not None:
                 for mod in mods_children.findall("node[@id='ModuleShortDesc']"):
@@ -131,10 +148,10 @@ class BG3ModInstaller:
                     if folder is not None and folder.get('value') == mod_folder:
                         mods_children.remove(mod)
                         break
-            
+
             tree.write(self.profile_modsettings, encoding="utf-8", xml_declaration=True)
             print(f"Updated {self.profile_modsettings}")
-            
+
             self.sync_modsettings()
             return True
 
@@ -146,7 +163,7 @@ class BG3ModInstaller:
         """Create XML structure for mod entry."""
         module = ET.Element("node")
         module.set("id", "ModuleShortDesc")
-        
+
         attributes = {
             "Folder": mod_info["Folder"],
             "MD5": mod_info.get("MD5", ""),
@@ -154,13 +171,13 @@ class BG3ModInstaller:
             "UUID": mod_info["UUID"],
             "Version64": str(mod_info.get("Version", "36028797018963968"))
         }
-        
+
         for key, value in attributes.items():
             attr = ET.SubElement(module, "attribute")
             attr.set("id", key)
             attr.set("type", "LSString")
             attr.set("value", value)
-            
+
         return module
 
     def update_modsettings(self, mod_info):
@@ -168,19 +185,19 @@ class BG3ModInstaller:
         try:
             tree = ET.parse(self.profile_modsettings)
             root = tree.getroot()
-            
+
             mods_children = root.find(".//node[@id='Mods']/children")
             if mods_children is None:
                 raise Exception("Mods children section not found in modsettings.lsx")
-            
+
             new_module = self.create_mod_xml(mod_info)
             mods_children.append(new_module)
-            
+
             tree.write(self.profile_modsettings, encoding="utf-8", xml_declaration=True)
             print(f"Updated {self.profile_modsettings}")
-            
+
             self.sync_modsettings()
-            
+
         except Exception as e:
             print(f"Error updating modsettings: {e}")
             sys.exit(1)
@@ -190,7 +207,7 @@ class BG3ModInstaller:
         try:
             # Create mods directory if it doesn't exist
             self.mods_path.mkdir(parents=True, exist_ok=True)
-            
+
             if mod_path.suffix.lower() in ['.zip', '.rar', '.7z']:
                 # Get mod info and confirm installation
                 mod_info = self.get_mod_info_from_zip(mod_path)
@@ -198,24 +215,24 @@ class BG3ModInstaller:
                     if not self.confirm_action("install", mod_info):
                         print("Mod installation cancelled.")
                         return
-                
+
                 # Extract archive
                 with zipfile.ZipFile(mod_path, 'r') as zip_ref:
                     pak_files = [f for f in zip_ref.namelist() if f.endswith('.pak')]
                     info_files = [f for f in zip_ref.namelist() if f.endswith('info.json')]
-                    
+
                     if not pak_files:
                         raise Exception("No .pak files found in archive")
-                    
+
                     for pak_file in pak_files:
                         zip_ref.extract(pak_file, self.mods_path)
                         print(f"Installed {pak_file} to mods directory")
-                    
+
                     if info_files:
                         info_data = json.loads(zip_ref.read(info_files[0]))
                         if "Mods" in info_data and len(info_data["Mods"]) > 0:
                             self.update_modsettings(info_data["Mods"][0])
-                    
+
             elif mod_path.suffix.lower() == '.pak':
                 print("\nWarning: Installing a .pak file directly. No mod information available for confirmation.")
                 while True:
@@ -226,13 +243,13 @@ class BG3ModInstaller:
                     if response in ['yes', 'y']:
                         break
                     print("Please answer with 'yes' or 'no'")
-                
+
                 shutil.copy2(mod_path, self.mods_path)
                 print(f"Installed {mod_path.name} to mods directory")
-                
+
             else:
                 raise Exception("Unsupported file type. Please provide a .zip archive or .pak file")
-                
+
         except Exception as e:
             print(f"Error installing mod: {e}")
             sys.exit(1)
@@ -257,7 +274,7 @@ def display_installed_mods(mods: List[Dict]):
     print("\nInstalled Mods:")
     for i, mod in enumerate(mods):
         print(f"{i + 1}. {mod['Name']} ({mod['Folder']})")
-    
+
     while True:
         try:
             choice = int(input("\nEnter the number of the mod to remove (0 to cancel): "))
@@ -270,11 +287,19 @@ def display_installed_mods(mods: List[Dict]):
             print("Please enter a valid number")
 
 def main():
-    installer = BG3ModInstaller()
-    
+    parser = argparse.ArgumentParser(description="Install Baldur's Gate 3 Mods on Linux")
+    parser.add_argument(
+        "-p", "--path",
+        help="Root path for Steam (default: '~/.steam/steam') - should contain the 'steamapps' dir.")
+    parser.add_argument(
+        "-u", "--userpath",
+        help="Root path for Steam userdata (default: '~/.steam/steam/userdata').")
+    args = parser.parse_args()
+    installer = BG3ModInstaller(steam_path=args.path, steam_userdata_path=args.userpath)
+
     while True:
         choice = display_menu()
-        
+
         if choice == 1:  # Install mod
             mod_path = input("\nEnter the path to the mod file (.zip or .pak): ")
             try:
@@ -282,20 +307,20 @@ def main():
                 print("Mod installation completed successfully!")
             except Exception as e:
                 print(f"Error installing mod: {e}")
-                
+
         elif choice == 2:  # Remove mod
             installed_mods = installer.get_installed_mods()
             if not installed_mods:
                 print("No mods currently installed.")
                 continue
-                
+
             mod_index = display_installed_mods(installed_mods)
             if mod_index is not None:
                 if installer.remove_mod(mod_index):
                     print("Mod removed successfully!")
                 else:
                     print("Failed to remove mod.")
-                    
+
         else:  # Exit
             print("Goodbye!")
             break
