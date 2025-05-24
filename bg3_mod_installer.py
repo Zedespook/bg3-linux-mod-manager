@@ -294,8 +294,32 @@ def main():
     parser.add_argument(
         "-u", "--userpath",
         help="Root path for Steam userdata (default: '~/.steam/steam/userdata').")
+    parser.add_argument(
+        "-i", "--install",
+        help="install the mod at the supplied path")
+    parser.add_argument(
+        "-l", "--list",
+        action="store_true",
+        help="list installed mods")
+
     args = parser.parse_args()
     installer = BG3ModInstaller(steam_path=args.path, steam_userdata_path=args.userpath)
+
+    if args.install:
+        try:
+            installer.install_mod(Path(args.install))
+        except Exception as e:
+                print(f"Error installing mod: {e}")
+        return
+    
+    if args.list:
+        installed_mods = installer.get_installed_mods()
+        if installed_mods:
+            for i, mod in enumerate(installed_mods):
+                print(f"{i + 1}. {mod['Name']} ({mod['Folder']})")
+        else:
+            print("No mods currently installed.")
+        return
 
     while True:
         choice = display_menu()
